@@ -1,0 +1,97 @@
+@page "/gantt"
+@using GanttChartApp.Models
+@using Microsoft.JSInterop
+@using System.Collections.Generic
+@using System
+
+<h3>ガントチャート</h3>
+
+<div class="gantt-header">
+    <button class="btn btn-primary" @onclick="AddTask">+ タスク追加</button>
+    <button class="btn btn-secondary" @onclick="SaveJson">保存</button>
+    <input type="file" @onchange="LoadJson" />
+</div>
+
+<div class="gantt-main">
+    <div class="task-list">
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>タスク</th>
+                    <th>担当者</th>
+                    <th>開始日</th>
+                    <th>終了日</th>
+                    <th>進捗率</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var task in Tasks)
+                {
+                    <tr>
+                        <td><input value="@task.Name" @onchange="e => UpdateTask(task, nameof(task.Name), e.Value?.ToString())" /></td>
+                        <td><input value="@task.Assignee" @onchange="e => UpdateTask(task, nameof(task.Assignee), e.Value?.ToString())" /></td>
+                        <td><input type="date" value="@task.StartDate.ToString("yyyy-MM-dd")" @onchange="@(e => UpdateTask(task, nameof(task.StartDate), ((ChangeEventArgs)e).Value?.ToString()))" /></td>
+                        <td><input type="date" value="@task.EndDate.ToString("yyyy-MM-dd")" @onchange="@(e => UpdateTask(task, nameof(task.EndDate), ((ChangeEventArgs)e).Value?.ToString()))" /></td>
+                        <td><input type="number" min="0" max="100" value="@task.Progress" @onchange="e => UpdateTask(task, nameof(task.Progress), e.Value?.ToString())" /></td>
+                        <td><button class="btn btn-danger btn-sm" @onclick="() => RemoveTask(task)">🗑</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="timeline">
+        <!-- タイムライン部分は今後JSInteropで実装予定 -->
+        <p>タイムライン（ガントバー）は今後実装します。</p>
+    </div>
+</div>
+
+@code {
+    List<GanttTask> Tasks = new();
+    int nextId = 1;
+
+    void AddTask()
+    {
+        Tasks.Add(new GanttTask
+        {
+            Id = nextId++,
+            Name = "新しいタスク",
+            Assignee = "",
+            StartDate = DateTime.Today,
+            EndDate = DateTime.Today.AddDays(1),
+            Progress = 0
+        });
+    }
+
+    void RemoveTask(GanttTask task)
+    {
+        Tasks.Remove(task);
+    }
+
+    void UpdateTask(GanttTask task, string property, string? value)
+    {
+        if (property == nameof(task.Name)) task.Name = value ?? "";
+        if (property == nameof(task.Assignee)) task.Assignee = value ?? "";
+        if (property == nameof(task.StartDate) && DateTime.TryParse(value, out var sd)) task.StartDate = sd;
+        if (property == nameof(task.EndDate) && DateTime.TryParse(value, out var ed)) task.EndDate = ed;
+        if (property == nameof(task.Progress) && int.TryParse(value, out var prg)) task.Progress = prg;
+    }
+
+    async void SaveJson()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(Tasks);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        var fileName = $"GANT{DateTime.Now:yyyyMMddHHmmss}.json";
+        await JS.InvokeVoidAsync("saveAsFile", fileName, Convert.ToBase64String(bytes));
+    }
+
+    async void LoadJson(ChangeEventArgs e)
+    {
+        if (e.Value is not null)
+        {
+            // 実装はJSInteropでファイル読込を行う必要あり
+        }
+    }
+
+    [Inject] IJSRuntime JS { get; set; } = default!;
+}
