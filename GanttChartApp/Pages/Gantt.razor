@@ -40,9 +40,57 @@
             </tbody>
         </table>
     </div>
-    <div class="timeline">
-        <!-- タイムライン部分は今後JSInteropで実装予定 -->
-        <p>タイムライン（ガントバー）は今後実装します。</p>
+    <div class="timeline" style="overflow-x:auto; background:#f8f9fa; padding:16px;">
+        @if (Tasks.Count > 0)
+        {
+            var minDate = Tasks.Min(t => t.StartDate);
+            var maxDate = Tasks.Max(t => t.EndDate);
+            var days = (maxDate - minDate).Days + 1;
+            var rowHeight = 32;
+            var barHeight = 16;
+            var barYOffset = 8;
+            var dayWidth = 32;
+            var svgWidth = days * dayWidth + 100;
+            var svgHeight = Tasks.Count * rowHeight + 40;
+            <svg width="@svgWidth" height="@svgHeight">
+                <!-- 日付ヘッダー -->
+                @for (int d = 0; d < days; d++)
+                {
+                    var date = minDate.AddDays(d);
+                    var x = d * dayWidth + 100;
+                    <rect x="@x" y="0" width="@dayWidth" height="@rowHeight" fill="@(date == DateTime.Today ? "#ffeeba" : (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday ? "#e9ecef" : "#fff"))" stroke="#dee2e6" />
+                    <g text-anchor="middle">
+                        <text x="@(x + dayWidth/2)" y="20" font-size="12">@date.ToString("MM/dd")</text>
+                    </g>
+                }
+                <!-- 今日の縦線 -->
+                @if (minDate <= DateTime.Today && DateTime.Today <= maxDate)
+                {
+                    var todayX = (DateTime.Today - minDate).Days * dayWidth + 100;
+                    <line x1="@todayX" y1="0" x2="@todayX" y2="@svgHeight" stroke="#ff9800" stroke-width="2" />
+                }
+                <!-- タスクバー -->
+                @for (int i = 0; i < Tasks.Count; i++)
+                {
+                    var t = Tasks[i];
+                    var startX = (t.StartDate - minDate).Days * dayWidth + 100;
+                    var endX = (t.EndDate - minDate).Days * dayWidth + 100 + dayWidth;
+                    var y = (i + 1) * rowHeight;
+                    // バー本体
+                    <rect x="@startX" y="@(y + barYOffset)" width="@(endX - startX)" height="@barHeight" fill="#90caf9" stroke="#1976d2" rx="4" />
+                    // 進捗率
+                    <rect x="@startX" y="@(y + barYOffset)" width="@((endX - startX) * t.Progress / 100)" height="@barHeight" fill="#43a047" rx="4" />
+                    // タスク名
+                    <g>
+                        <text x="90" y="@(y + barYOffset + barHeight - 2)" font-size="12" text-anchor="end">@t.Name</text>
+                    </g>
+                }
+            </svg>
+        }
+        else
+        {
+            <p>タスクを追加してください。</p>
+        }
     </div>
 </div>
 
