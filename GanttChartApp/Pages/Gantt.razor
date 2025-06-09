@@ -10,6 +10,13 @@
     <button class="btn btn-primary" @onclick="AddTask">+ タスク追加</button>
     <button class="btn btn-secondary" @onclick="SaveJson">保存</button>
     <input type="file" @onchange="LoadJson" />
+    <span class="ms-3">表示範囲:</span>
+    <select @bind="calendarRange" class="form-select d-inline-block w-auto ms-1">
+        <option value="week">今日から1週間</option>
+        <option value="month">月初から1か月</option>
+        <option value="3months">月初から3か月</option>
+        <option value="tasks">タスク期間</option>
+    </select>
 </div>
 
 <div class="gantt-main">
@@ -41,10 +48,30 @@
         </table>
     </div>
     <div class="timeline" style="overflow-x:auto; background:#f8f9fa; padding:16px;">
-        @if (Tasks.Count > 0)
+        @if (Tasks.Count > 0 || calendarRange != "tasks")
         {
-            var minDate = Tasks.Min(t => t.StartDate);
-            var maxDate = Tasks.Max(t => t.EndDate);
+            DateTime minDate, maxDate;
+            var today = DateTime.Today;
+            if (calendarRange == "week")
+            {
+                minDate = today;
+                maxDate = today.AddDays(6);
+            }
+            else if (calendarRange == "month")
+            {
+                minDate = new DateTime(today.Year, today.Month, 1);
+                maxDate = minDate.AddMonths(1).AddDays(-1);
+            }
+            else if (calendarRange == "3months")
+            {
+                minDate = new DateTime(today.Year, today.Month, 1);
+                maxDate = minDate.AddMonths(3).AddDays(-1);
+            }
+            else // tasks
+            {
+                minDate = Tasks.Min(t => t.StartDate);
+                maxDate = Tasks.Max(t => t.EndDate);
+            }
             var days = (maxDate - minDate).Days + 1;
             var rowHeight = 32;
             var barHeight = 16;
@@ -73,8 +100,10 @@
                 @for (int i = 0; i < Tasks.Count; i++)
                 {
                     var t = Tasks[i];
-                    var startX = (t.StartDate - minDate).Days * dayWidth + 100;
-                    var endX = (t.EndDate - minDate).Days * dayWidth + 100 + dayWidth;
+                    // 表示範囲外のタスクはスキップ
+                    if (t.EndDate < minDate || t.StartDate > maxDate) continue;
+                    var startX = (t.StartDate < minDate ? 0 : (t.StartDate - minDate).Days) * dayWidth + 100;
+                    var endX = (t.EndDate > maxDate ? (maxDate - minDate).Days : (t.EndDate - minDate).Days) * dayWidth + 100 + dayWidth;
                     var y = (i + 1) * rowHeight;
                     // バー本体
                     <rect x="@startX" y="@(y + barYOffset)" width="@(endX - startX)" height="@barHeight" fill="#90caf9" stroke="#1976d2" rx="4" />
@@ -95,8 +124,38 @@
 </div>
 
 @code {
+    string calendarRange = "week";
     List<GanttTask> Tasks = new();
     int nextId = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTasksFromLocalStorage();
+    }
+
+    async Task LoadTasksFromLocalStorage()
+    {
+        var json = await JS.InvokeAsync<string>("ganttLocalStorage.load", "gantt-tasks");
+        if (!string.IsNullOrEmpty(json))
+        {
+            try
+            {
+                var loaded = System.Text.Json.JsonSerializer.Deserialize<List<GanttTask>>(json);
+                if (loaded != null)
+                {
+                    Tasks = loaded;
+                    nextId = Tasks.Count > 0 ? Tasks.Max(t => t.Id) + 1 : 1;
+                }
+            }
+            catch { }
+        }
+    }
+
+    void SaveTasksToLocalStorage()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(Tasks);
+        JS.InvokeVoidAsync("ganttLocalStorage.save", "gantt-tasks", json);
+    }
 
     void AddTask()
     {
@@ -109,11 +168,13 @@
             EndDate = DateTime.Today.AddDays(1),
             Progress = 0
         });
+        SaveTasksToLocalStorage();
     }
 
     void RemoveTask(GanttTask task)
     {
         Tasks.Remove(task);
+        SaveTasksToLocalStorage();
     }
 
     void UpdateTask(GanttTask task, string property, string? value)
@@ -123,6 +184,7 @@
         if (property == nameof(task.StartDate) && DateTime.TryParse(value, out var sd)) task.StartDate = sd;
         if (property == nameof(task.EndDate) && DateTime.TryParse(value, out var ed)) task.EndDate = ed;
         if (property == nameof(task.Progress) && int.TryParse(value, out var prg)) task.Progress = prg;
+        SaveTasksToLocalStorage();
     }
 
     async void SaveJson()
