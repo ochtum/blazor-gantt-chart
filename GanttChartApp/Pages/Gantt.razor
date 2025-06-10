@@ -76,9 +76,16 @@
             var rowHeight = 32;
             var barHeight = 16;
             var barYOffset = 8;
-            var dayWidth = 32;
+            var dayWidth = 6;
             var svgWidth = days * dayWidth + 100;
             var svgHeight = Tasks.Count * rowHeight + 40;
+
+            // 表示範囲内のタスクのみ抽出
+            var visibleTasks = Tasks
+                .Select((t, idx) => new { Task = t, Index = idx })
+                .Where(x => x.Task.EndDate >= minDate && x.Task.StartDate <= maxDate)
+                .ToList();
+
             <svg width="@svgWidth" height="@svgHeight">
                 <!-- 日付ヘッダー -->
                 @for (int d = 0; d < days; d++)
@@ -97,16 +104,28 @@
                     <line x1="@todayX" y1="0" x2="@todayX" y2="@svgHeight" stroke="#ff9800" stroke-width="2" />
                 }
                 <!-- タスクバー -->
-                @for (int i = 0; i < Tasks.Count; i++)
+                @for (int vi = 0; vi < visibleTasks.Count; vi++)
                 {
-                    var t = Tasks[i];
-                    // 表示範囲外のタスクはスキップ
-                    if (t.EndDate < minDate || t.StartDate > maxDate) continue;
+                    var t = visibleTasks[vi].Task;
+                    var i = visibleTasks[vi].Index; // Tasksリスト上のインデックス
                     var startX = (t.StartDate < minDate ? 0 : (t.StartDate - minDate).Days) * dayWidth + 100;
                     var endX = (t.EndDate > maxDate ? (maxDate - minDate).Days : (t.EndDate - minDate).Days) * dayWidth + 100 + dayWidth;
-                    var y = (i + 1) * rowHeight;
+                    var y = (vi + 1) * rowHeight;
                     // バー本体
-                    <rect x="@startX" y="@(y + barYOffset)" width="@(endX - startX)" height="@barHeight" fill="#90caf9" stroke="#1976d2" rx="4" />
+                    <rect x="@startX" y="@(y + barYOffset)" width="@(endX - startX)" height="@barHeight" fill="#90caf9" stroke="#1976d2" rx="4"
+                        style="cursor:move"
+                        @onmousedown="e => OnBarMouseDown(i, e.ClientX, minDate, dayWidth)"
+                    />
+                    // 左端リサイズハンドル（幅を32pxに拡大、バーの上下にも余裕を持たせる）
+                    <rect x="@(startX - 16)" y="@(y + barYOffset - 8)" width="32" height="@(barHeight + 16)" fill="transparent"
+                        style="cursor:ew-resize"
+                        @onmousedown="e => OnBarResizeMouseDown(i, e.ClientX, minDate, dayWidth, true)"
+                    />
+                    // 右端リサイズハンドル（幅を32pxに拡大、バーの上下にも余裕を持たせる）
+                    <rect x="@(endX - 16)" y="@(y + barYOffset - 8)" width="32" height="@(barHeight + 16)" fill="transparent"
+                        style="cursor:ew-resize"
+                        @onmousedown="e => OnBarResizeMouseDown(i, e.ClientX, minDate, dayWidth, false)"
+                    />
                     // 進捗率
                     <rect x="@startX" y="@(y + barYOffset)" width="@((endX - startX) * t.Progress / 100)" height="@barHeight" fill="#43a047" rx="4" />
                     // タスク名
@@ -114,6 +133,18 @@
                         <text x="90" y="@(y + barYOffset + barHeight - 2)" font-size="12" text-anchor="end">@t.Name</text>
                     </g>
                 }
+                <!-- SVG全体でドラッグ追従 -->
+                @if (draggingTaskIndex != null)
+                {
+                    <rect x="0" y="0" width="@svgWidth" height="@svgHeight" fill="transparent"
+                        @onmousemove="e => OnBarMouseMove(e.ClientX, minDate, dayWidth)"
+                        @onmouseup="e => OnBarMouseUp()" />
+                }
+                <!-- ＋アイコン -->
+                <g @onclick="AddTask" style="cursor:pointer">
+                    <circle cx="50" cy="@(svgHeight - 30)" r="14" fill="#1976d2" />
+                    <text x="50" y="@(svgHeight - 25)" text-anchor="middle" font-size="20" fill="#fff" font-weight="bold">＋</text>
+                </g>
             </svg>
         }
         else
@@ -127,6 +158,16 @@
     string calendarRange = "week";
     List<GanttTask> Tasks = new();
     int nextId = 1;
+    int? draggingTaskIndex = null;
+    double dragStartX = 0;
+    DateTime dragStartDate;
+    int dragBarDays = 0;
+    bool isResizing = false;
+    bool resizeIsLeft = false;
+    int? resizingTaskIndex = null;
+    double resizeStartX = 0;
+    DateTime resizeStartDate;
+    DateTime resizeEndDate;
 
     protected override async Task OnInitializedAsync()
     {
@@ -201,6 +242,69 @@
         {
             // 実装はJSInteropでファイル読込を行う必要あり
         }
+    }
+
+    void OnBarMouseDown(int taskIndex, double mouseX, DateTime minDate, int dayWidth)
+    {
+        draggingTaskIndex = taskIndex;
+        dragStartX = mouseX;
+        dragStartDate = Tasks[taskIndex].StartDate;
+        dragBarDays = (Tasks[taskIndex].EndDate - Tasks[taskIndex].StartDate).Days;
+    }
+
+    void OnBarResizeMouseDown(int taskIndex, double mouseX, DateTime minDate, int dayWidth, bool isLeft)
+    {
+        isResizing = true;
+        resizeIsLeft = isLeft;
+        resizingTaskIndex = taskIndex;
+        resizeStartX = mouseX;
+        resizeStartDate = Tasks[taskIndex].StartDate;
+        resizeEndDate = Tasks[taskIndex].EndDate;
+    }
+
+    void OnBarMouseMove(double mouseX, DateTime minDate, int dayWidth)
+    {
+        if (isResizing && resizingTaskIndex is int idx)
+        {
+            var diffDays = (int)Math.Round((mouseX - resizeStartX) / dayWidth);
+            if (resizeIsLeft)
+            {
+                var newStart = resizeStartDate.AddDays(diffDays);
+                if (newStart < resizeEndDate)
+                {
+                    Tasks[idx].StartDate = newStart;
+                    SaveTasksToLocalStorage();
+                }
+            }
+            else
+            {
+                var newEnd = resizeEndDate.AddDays(diffDays);
+                if (resizeStartDate < newEnd)
+                {
+                    Tasks[idx].EndDate = newEnd;
+                    SaveTasksToLocalStorage();
+                }
+            }
+        }
+        else if (draggingTaskIndex is int idx2)
+        {
+            var diffDays = (int)Math.Round((mouseX - dragStartX) / dayWidth);
+            var newStart = dragStartDate.AddDays(diffDays);
+            var newEnd = newStart.AddDays(dragBarDays);
+            if (newStart <= newEnd)
+            {
+                Tasks[idx2].StartDate = newStart;
+                Tasks[idx2].EndDate = newEnd;
+                SaveTasksToLocalStorage();
+            }
+        }
+    }
+
+    void OnBarMouseUp()
+    {
+        draggingTaskIndex = null;
+        isResizing = false;
+        resizingTaskIndex = null;
     }
 
     [Inject] IJSRuntime JS { get; set; } = default!;
