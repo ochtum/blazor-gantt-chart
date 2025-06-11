@@ -76,7 +76,7 @@
             var rowHeight = 32;
             var barHeight = 16;
             var barYOffset = 8;
-            var dayWidth = 6;
+            var dayWidth = 32;
             var svgWidth = days * dayWidth + 100;
             var svgHeight = Tasks.Count * rowHeight + 40;
 
@@ -266,9 +266,17 @@
     {
         if (isResizing && resizingTaskIndex is int idx)
         {
-            var diffDays = (int)Math.Round((mouseX - resizeStartX) / dayWidth);
+            // 1pxでも動いたら1日分反応するように修正
+            int diffDays = 0;
             if (resizeIsLeft)
             {
+                var delta = mouseX - resizeStartX;
+                if (Math.Abs(delta) >= 1)
+                {
+                    diffDays = (int)Math.Floor(delta / dayWidth);
+                    if (delta > 0) diffDays = Math.Max(1, diffDays); // 右へ1px以上動いたら+1日
+                    if (delta < 0) diffDays = Math.Min(-1, diffDays); // 左へ1px以上動いたら-1日
+                }
                 var newStart = resizeStartDate.AddDays(diffDays);
                 if (newStart < resizeEndDate)
                 {
@@ -278,6 +286,13 @@
             }
             else
             {
+                var delta = mouseX - resizeStartX;
+                if (Math.Abs(delta) >= 1)
+                {
+                    diffDays = (int)Math.Ceiling(delta / dayWidth);
+                    if (delta > 0) diffDays = Math.Max(1, diffDays); // 右へ1px以上動いたら+1日
+                    if (delta < 0) diffDays = Math.Min(-1, diffDays); // 左へ1px以上動いたら-1日
+                }
                 var newEnd = resizeEndDate.AddDays(diffDays);
                 if (resizeStartDate < newEnd)
                 {
