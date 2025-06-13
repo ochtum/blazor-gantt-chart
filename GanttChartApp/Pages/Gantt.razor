@@ -134,9 +134,9 @@
                     </g>
                 }
                 <!-- SVG全体でドラッグ追従 -->
-                @if (draggingTaskIndex != null)
+                @if (draggingTaskIndex != null || resizingTaskIndex != null)
                 {
-                    <rect x="0" y="0" width="@svgWidth" height="@svgHeight" fill="transparent"
+                    <rect id="test" x="0" y="0" width="@svgWidth" height="@svgHeight" fill="transparent"
                         @onmousemove="e => OnBarMouseMove(e.ClientX, minDate, dayWidth)"
                         @onmouseup="e => OnBarMouseUp()" />
                 }
